@@ -207,20 +207,26 @@ async def on_startup(bot: Bot) -> None:
     logging.info(f"Вебхук успешно установлен на: {WEBHOOK_URL}")
 
 def main():
+    # 1. Сначала создаем приложение
     app = web.Application()
     
-    # Настраиваем обработчик запросов от Telegram
+    # 2. СРАЗУ ЖЕ добавляем обработку главной страницы (ДЛЯ ПИНГА)
+    app.router.add_get('/', handle_index)
+    
+    # 3. Только потом настраиваем обработчик запросов от Telegram
     webhook_requests_handler = SimpleRequestHandler(
         dispatcher=dp,
         bot=bot
     )
     webhook_requests_handler.register(app, path=WEBHOOK_PATH)
     
-    # Регистрируем функции старта
+    # 4. Регистрируем функции старта
     dp.startup.register(on_startup)
     setup_application(app, dp, bot=bot)
     
+    # 5. Запускаем сервер
     web.run_app(app, host='0.0.0.0', port=PORT)
+
 
 if __name__ == '__main__':
     main()
