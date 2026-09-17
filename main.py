@@ -205,7 +205,10 @@ WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
 async def on_startup(bot: Bot) -> None:
     await bot.set_webhook(WEBHOOK_URL)
     logging.info(f"Вебхук успешно установлен на: {WEBHOOK_URL}")
-
+    
+async def handle_index(request):
+    return web.Response(text="Football Bot is Alive!", content_type="text/plain")
+    
 def main():
     # 1. Сначала создаем приложение
     app = web.Application()
