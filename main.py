@@ -2,34 +2,40 @@ import logging
 import random
 import os
 from aiohttp import web
-from aiogram import Bot, Dispatcher, types
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.dispatcher.webhook import get_new_configured_app
+from aiogram import Bot, Dispatcher, types, F
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebhookInfo
+from aiogram.enums import ParseMode
+from aiogram.filters import Command, CommandObject
+from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 
-# БЕЗОПАСНОСТЬ: Бот будет брать токен из настроек Render, а не из открытого кода
+# БЕЗОПАСНОСТЬ: Бот берет токен из настроек Render
 API_TOKEN = os.environ.get("8921087927:AAGpp5_adThIX9znrQul1bmM_SP6Fram8WQ")
 
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=API_TOKEN)
-dp = Dispatcher(bot)
+dp = Dispatcher()
 
-# Временное хранилище для демонстрации
+# Временное хранилище событий
 events = {}
 
 def get_event_keyboard():
-    keyboard = InlineKeyboardMarkup(row_width=3)
-    keyboard.add(
-        InlineKeyboardButton("Я иду ✅", callback_data="going"),
-        InlineKeyboardButton("Пас ❌", callback_data="skip"),
-        InlineKeyboardButton("Думаю 🤔", callback_data="thinking")
-    )
-    keyboard.add(
-        InlineKeyboardButton("+1 гость 👤", callback_data="plus_one"),
-        InlineKeyboardButton("-1 гость 👤", callback_data="minus_one")
-    )
-    keyboard.add(InlineKeyboardButton("Поделить на команды 🔄", callback_data="split_teams"))
-    keyboard.add(InlineKeyboardButton("Перемешать заново 🎲", callback_data="reshuffle_teams"))
-    return keyboard
+    # В aiogram 3 структура кнопок собирается через списки
+    buttons = [
+        [
+            InlineKeyboardButton(text="Я иду ✅", callback_data="going"),
+            InlineKeyboardButton(text="Пас ❌", callback_data="skip"),
+            InlineKeyboardButton(text="Думаю 🤔", callback_data="thinking")
+        ],
+        [
+            InlineKeyboardButton(text="+1 гость 👤", callback_data="plus_one"),
+            InlineKeyboardButton(text="-1 гость 👤", callback_data="minus_one")
+        ],
+        [
+            InlineKeyboardButton(text="Поделить на команды 🔄", callback_data="split_teams"),
+            InlineKeyboardButton(text="Перемешать заново 🎲", callback_data="reshuffle_teams")
+        ]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 def render_event_text(title, going, skipped, thinking, guests, team1=None, team2=None):
     text = f"📅 **Мероприятие:** {title}\n\n"
@@ -82,17 +88,17 @@ def render_event_text(title, going, skipped, thinking, guests, team1=None, team2
             
     return text
 
-@dp.message_handler(commands=['event'])
-async def create_event(message: types.Message):
-    title = message.get_args().strip()
+@dp.message_handler = dp.message(Command("event"))
+async def create_event(message: types.Message, command: CommandObject):
+    title = command.args.strip() if command.args else ""
     if not title:
-        await message.reply("❌ Использование: `/event Название мероприятия`", parse_mode="Markdown")
+        await message.reply("❌ Использование: `/event Название мероприятия`", parse_mode=ParseMode.MARKDOWN)
         return
 
     sent_msg = await message.answer(
         render_event_text(title, [], [], [], {}), 
         reply_markup=get_event_keyboard(),
-        parse_mode="Markdown"
+        parse_mode=ParseMode.MARKDOWN
     )
     
     events[sent_msg.message_id] = {
@@ -110,7 +116,7 @@ async def create_event(message: types.Message):
     except Exception:
         pass
 
-@dp.callback_query_handler(lambda c: c.data in ['going', 'skip', 'thinking', 'plus_one', 'minus_one', 'split_teams', 'reshuffle_teams'])
+@dp.callback_query(F.data.in_(['going', 'skip', 'thinking', 'plus_one', 'minus_one', 'split_teams', 'reshuffle_teams']))
 async def handle_attendance(callback_query: types.CallbackQuery):
     msg_id = callback_query.message.message_id
     if msg_id not in events:
@@ -183,29 +189,38 @@ async def handle_attendance(callback_query: types.CallbackQuery):
             event['guests'], event['team1'], event['team2']
         ),
         reply_markup=get_event_keyboard(),
-        parse_mode="Markdown"
+        parse_mode=ParseMode.MARKDOWN
     )
     
     if action not in ['split_teams', 'reshuffle_teams', 'minus_one']:
         await callback_query.answer()
 
-# --- ПОЛНОЦЕННЫЙ БЛОК ЗАПУСКА WEBHOOK ДЛЯ RENDER.COM ---
+# --- СОВРЕМЕННЫЙ ЗАПУСК WEBHOOK (AIOGRAM 3) ДЛЯ RENDER ---
 
 PORT = int(os.environ.get("PORT", 3001))
 WEBHOOK_HOST = os.environ.get("RENDER_EXTERNAL_URL")
 WEBHOOK_PATH = f"/webhook/{API_TOKEN}"
 WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
 
-async def on_startup(app):
+async def on_startup(bot: Bot) -> None:
     await bot.set_webhook(WEBHOOK_URL)
-    logging.info(f"Вебхук успешно установлен на URL: {WEBHOOK_URL}")
+    logging.info(f"Вебхук успешно установлен на: {WEBHOOK_URL}")
 
-async def on_shutdown(app):
-    await bot.delete_webhook()
-    await bot.close()
+def main():
+    app = web.Application()
+    
+    # Настраиваем обработчик запросов от Telegram
+    webhook_requests_handler = SimpleRequestHandler(
+        dispatcher=dp,
+        bot=bot
+    )
+    webhook_requests_handler.register(app, path=WEBHOOK_PATH)
+    
+    # Регистрируем функции старта
+    dp.startup.register(on_startup)
+    setup_application(app, dp, bot=bot)
+    
+    web.run_app(app, host='0.0.0.0', port=PORT)
 
 if __name__ == '__main__':
-    app = get_new_configured_app(dispatcher=dp, path=WEBHOOK_PATH)
-    app.on_startup.append(on_startup)
-    app.on_shutdown.append(on_shutdown)
-    web.run_app(app, host='0.0.0.0', port=PORT)
+    main()
