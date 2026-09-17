@@ -88,7 +88,7 @@ def render_event_text(title, going, skipped, thinking, guests, team1=None, team2
             
     return text
 
-@dp.message_handler = dp.message(Command("event"))
+@dp.message(Command("event"))
 async def create_event(message: types.Message, command: CommandObject):
     title = command.args.strip() if command.args else ""
     if not title:
