@@ -9,7 +9,7 @@ from aiogram.filters import Command, CommandObject
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 
 # БЕЗОПАСНОСТЬ: Бот берет токен из настроек Render
-API_TOKEN = os.environ.get("8921087927:AAGpp5_adThIX9znrQul1bmM_SP6Fram8WQ")
+API_TOKEN = '8921087927:AAGpp5_adThIX9znrQul1bmM_SP6Fram8WQ'
 
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=API_TOKEN)
